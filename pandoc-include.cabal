@@ -1,49 +1,59 @@
-Name:                 pandoc-include
-Version:              0.0.2
-Synopsis:             Include other Markdown files
-Description:          A Pandoc filter that replaces include labeled
+-- This file has been generated from package.yaml by hpack version 0.15.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:                 pandoc-include
+version:              0.0.2
+synopsis:             Include other Markdown files
+description:          A Pandoc filter that replaces include labeled
                       Code Blocks with the contents of the referenced
                       Markdown files. Even nested, recursive includes.
-Homepage:             https://github.com/steindani/pandoc-include
-Bug-Reports:          https://github.com/steindani/pandoc-include/issues
-License:              MIT
-License-File:         LICENSE
-Author:               Dániel Stein <daniel@stein.hu>
-Maintainer:           Dániel Stein <daniel@stein.hu>
-Copyright:            (c) 2015 Dániel Stein
-Stability:            alpha
-Category:             Text
-Build-Type:           Simple
-Data-Files:           README.md
-Extra-Source-Files:   CHANGELOG.md
-Cabal-Version:        >=1.10
-Source-repository     head
-  type:               git
-  location:           git://github.com/steindani/pandoc-include.git
+category:             Text
+stability:            alpha
+homepage:             https://github.com/steindani/pandoc-include
+bug-reports:          https://github.com/steindani/pandoc-include/issues
+author:               Dániel Stein <daniel@stein.hu>
+maintainer:           Dániel Stein <daniel@stein.hu>
+copyright:            (c) 2015 Dániel Stein
+license:              MIT
+license-file:         LICENSE
+build-type:           Simple
+cabal-version:        >= 1.10
 
-Library
-  Build-Depends:      base >= 4.6 && < 5,
-                      containers >= 0.3,
-                      errors >= 2.0.0,
-                      text >= 0.11,
-                      pandoc >= 1.13.0.0,
-                      pandoc-types >= 1.12.0.0,
-                      directory
-  Hs-Source-Dirs:     src
-  Default-Extensions: CPP
-  Exposed-Modules:
-  Buildable:          True
-  Default-Language:   Haskell2010
+extra-source-files:
+  CHANGELOG.md
 
-Executable pandoc-include
-  Build-Depends:      base >= 4.6,
-                      containers >= 0.3,
-                      errors >= 2.0.0,
-                      text >= 0.11,
-                      pandoc >= 1.13.0.0,
-                      pandoc-types >= 1.12.0.0,
-                      directory
-  Hs-Source-Dirs:     .
-  Main-Is:            IncludeFilter.hs
-  Buildable:          True
-  Default-Language:   Haskell2010
+data-files:
+  README.md
+
+source-repository head
+  type: git
+  location: git://github.com/steindani/pandoc-include.git
+
+library
+  hs-source-dirs:
+    src
+  default-extensions: CPP
+  build-depends:
+    containers >=0.3,
+    errors >=2.0.0,
+    text >=0.11,
+    pandoc >=1.13.0.0,
+    pandoc-types >=1.12.0.0,
+    directory,
+    base >=4.6 && <5
+  default-language: Haskell2010
+
+executable pandoc-include
+  main-is: IncludeFilter.hs
+  hs-source-dirs:
+    ./.
+  build-depends:
+    containers >=0.3,
+    errors >=2.0.0,
+    text >=0.11,
+    pandoc >=1.13.0.0,
+    pandoc-types >=1.12.0.0,
+    directory,
+    base >=4.6
+  default-language: Haskell2010
