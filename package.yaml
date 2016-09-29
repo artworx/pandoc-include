@@ -1,0 +1,40 @@
+name: pandoc-include
+version: '0.0.2'
+synopsis: Include other Markdown files
+description: ! 'A Pandoc filter that replaces include labeled
+
+  Code Blocks with the contents of the referenced
+
+  Markdown files. Even nested, recursive includes.'
+category: Text
+author: Dániel Stein <daniel@stein.hu>
+maintainer: Dániel Stein <daniel@stein.hu>
+copyright: (c) 2015 Dániel Stein
+license: MIT
+homepage: https://github.com/steindani/pandoc-include
+git: git://github.com/steindani/pandoc-include.git
+bug-reports: https://github.com/steindani/pandoc-include/issues
+extra-source-files:
+- CHANGELOG.md
+dependencies:
+- containers >=0.3
+- errors >=2.0.0
+- text >=0.11
+- pandoc >=1.13.0.0
+- pandoc-types >=1.12.0.0
+- directory
+library:
+  source-dirs: src
+  default-extensions:
+  - CPP
+  dependencies:
+  - base >=4.6 && <5
+executables:
+  pandoc-include:
+    main: IncludeFilter.hs
+    source-dirs: ./.
+    dependencies:
+    - base >=4.6
+data-files:
+- README.md
+stability: alpha
