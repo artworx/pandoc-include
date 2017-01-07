@@ -82,13 +82,16 @@ import           Text.Pandoc.Walk
 
 stripPandoc :: Int -> Either PandocError Pandoc -> [Block]
 stripPandoc _ (Left _) = [Null]
-stripPandoc changeInHeaderLevel (Right (Pandoc meta blocks)) = maybe id (:) (title meta) $ modBlocks
+stripPandoc changeInHeaderLevel (Right (Pandoc meta blocks)) = maybe id (:) title modBlocks
     where
-         modBlocks = modifyHeaderLevelBlockWith changeInHeaderLevel <$> blocks
-         title (Meta (Map.lookup "title" -> Just (MetaInlines inls))) = do
+         getTitle (Meta (Map.lookup "title" -> Just (MetaInlines inls))) = Just inls
+         getTitle _ = Nothing
+         theTitle = getTitle meta
+         modBlocks = modifyHeaderLevelBlockWith changeInHeaderLevel (titleRef <$> theTitle) <$> blocks
+         title = do
+             inls <- theTitle
              guard $ changeInHeaderLevel > 0
              Just $ Header changeInHeaderLevel (titleRef inls,["section-title"],[]) inls
-         title _ = Nothing
          -- WARNING titleRef doesn't check that titles are unique; for that try uniqueIdent.
          titleRef = stringify . fmap (lowerCase . dashFromSpace)
          dashFromSpace Space = Str "-"
@@ -96,12 +99,16 @@ stripPandoc changeInHeaderLevel (Right (Pandoc meta blocks)) = maybe id (:) (tit
          lowerCase (Str x) = Str (fmap C.toLower x)
          lowerCase x = x
 
-modifyHeaderLevelBlockWith :: Int -> Block -> Block
-modifyHeaderLevelBlockWith n (Header int att inls) = Header (int + n) att inls
-modifyHeaderLevelBlockWith _ x = x
+amendIdentifier :: String -> Attr -> Attr
+amendIdentifier title (ident, cls, kvs) = (concat [title, "-", ident], cls, kvs)
+
+modifyHeaderLevelBlockWith :: Int -> Maybe String -> Block -> Block
+modifyHeaderLevelBlockWith n mtitle (Header int att inls) =
+        Header (int + n) (maybe id amendIdentifier mtitle att) inls
+modifyHeaderLevelBlockWith _ _ x = x
 
 modifyHeaderLevelWith :: Int -> Pandoc -> Pandoc
-modifyHeaderLevelWith n = walk (modifyHeaderLevelBlockWith n)
+modifyHeaderLevelWith n = walk (modifyHeaderLevelBlockWith n mempty)
 
 ioReadMarkdown :: String -> IO(Either PandocError Pandoc)
 ioReadMarkdown content = return $! readMarkdown def content
