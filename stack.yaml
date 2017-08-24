@@ -1,5 +1,6 @@
 flags: {}
-resolver: lts-7.1
+resolver:
+  name: default-snapshot
+  location: snapshot.yaml
 packages:
 - '.'
-extra-deps: []
