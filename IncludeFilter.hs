@@ -1,7 +1,5 @@
 #!/usr/bin/env runhaskell
 
-{-# LANGUAGE ViewPatterns #-}
-
 {-
 The MIT License (MIT)
 
@@ -67,18 +65,24 @@ example, if the header is incremented by 1, the title is inserted as a level 1 h
 
 -}
 
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ViewPatterns #-}
+
+
 import           Control.Monad
 import           Data.List
 import qualified Data.Char as C
 import qualified Data.Map as Map
 import           Control.Error (readMay, fromMaybe)
 import           System.Directory
+import           System.IO
 
 import           Text.Pandoc
 import           Text.Pandoc.Shared (uniqueIdent, stringify)
 import           Text.Pandoc.Error
 import           Text.Pandoc.JSON
 import           Text.Pandoc.Walk
+import qualified Text.Pandoc.Builder as B
 
 stripPandoc :: Int -> Either PandocError Pandoc -> [Block]
 stripPandoc _ (Left _) = [Null]
@@ -110,36 +114,63 @@ modifyHeaderLevelBlockWith _ _ x = x
 modifyHeaderLevelWith :: Int -> Pandoc -> Pandoc
 modifyHeaderLevelWith n = walk (modifyHeaderLevelBlockWith n mempty)
 
-ioReadMarkdown :: String -> IO(Either PandocError Pandoc)
-ioReadMarkdown content = return $! readMarkdown def content
+fileContentAsString :: String -> IO String
+fileContentAsString file = withFile file ReadMode $ \handle -> do
+  hSetEncoding handle utf8
+  hGetContents handle
 
-getContent :: Int -> String -> IO [Block]
-getContent changeInHeaderLevel file = do
-  c <- readFile file
-  p <- ioReadMarkdown c
-  return $! stripPandoc changeInHeaderLevel p
+fileContentAsBlocks :: Int -> String -> IO [Block]
+fileContentAsBlocks changeInHeaderLevel file = do
+  let contents = fileContentAsString file
+  let p = fmap (readMarkdown def) contents
+  stripPandoc changeInHeaderLevel <$> p
 
-getProcessableFileList :: String -> IO [String]
+getProcessableFileList :: String -> [String]
 getProcessableFileList list = do
   let f = lines list
-  let files = filter (\x -> not $ "#" `isPrefixOf` x) f
-  filterM doesFileExist files
+  filter (\x -> not $ "#" `isPrefixOf` x) f
 
-processFiles :: Int -> [String] -> IO [Block]
-processFiles changeInHeaderLevel toProcess =
-  fmap concat (getContent changeInHeaderLevel `mapM` toProcess)
+simpleInclude :: Int -> String -> [String] -> IO [Block]
+simpleInclude changeInHeaderLevel list classes = do
+  let toProcess = getProcessableFileList list
+  fmap concat (fileContentAsBlocks changeInHeaderLevel `mapM` toProcess)
+
+includeCodeBlock :: Block -> IO [Block]
+includeCodeBlock (CodeBlock (_, classes, _) list) = do
+  let filePath = head $ lines list
+  let content = fileContentAsString filePath
+  let newclasses = filter (\x -> "include" `isPrefixOf` x || "code" `isPrefixOf` x) classes
+  let blocks = fmap (B.codeBlockWith ("", newclasses, [])) content
+  fmap B.toList blocks
+
+cropContent :: [String] -> (String, String) -> [String]
+cropContent lines (skip, count) =
+  if not $ null skip then
+    if not $ null count then
+      take (read count) (drop (read skip) lines)
+    else
+      drop (read skip) lines
+  else
+    lines
+
+includeCropped :: Block -> IO [Block]
+includeCropped (CodeBlock (_, classes, _) list) = do
+  let [filePath, skip, count] = lines list
+  let content = fileContentAsString filePath
+  let croppedContent = unlines <$> ((cropContent . lines <$> content) <*> pure (skip, count))
+  fmap (stripPandoc 0 . readMarkdown def) croppedContent
 
 doInclude :: Block -> IO [Block]
-doInclude (CodeBlock (_, classes, options) list)
+doInclude cb@(CodeBlock (_, classes, options) list)
   | "include" `elem` classes = do
-    let toProcess = getProcessableFileList list
-        changeInHeaderLevel = fromMaybe 0 $ readMay =<< "header-change" `lookup` options
-    processFiles changeInHeaderLevel =<< toProcess
-  | "include-indented" `elem` classes =
+    let changeInHeaderLevel = fromMaybe 0 $ readMay =<< "header-change" `lookup` options
+    simpleInclude changeInHeaderLevel list classes
+  | "include-indented" `elem` classes = do
+    let newClasses = ("include" :) . delete "include-indented" $ classes
+    let newOptions = ("header-change","1") : options
     doInclude $ CodeBlock ("", newClasses, newOptions) list
-        where
-            newClasses = ("include" :) . delete "include-indented" $ classes
-            newOptions = ("header-change","1") : options
+  | "code" `elem` classes = includeCodeBlock cb
+  | "cropped" `elem` classes = includeCropped cb
 doInclude x = return [x]
 
 main :: IO ()
