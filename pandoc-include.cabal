@@ -35,6 +35,7 @@ library
     src
   default-extensions: CPP
   build-depends:
+    bytestring,
     containers >=0.3,
     errors >=2.0.0,
     text >=0.11,
@@ -51,6 +52,7 @@ executable pandoc-include
   hs-source-dirs:
     ./.
   build-depends:
+    bytestring,
     containers >=0.3,
     errors >=2.0.0,
     text >=0.11,

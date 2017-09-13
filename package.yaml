@@ -17,6 +17,7 @@ bug-reports: https://github.com/steindani/pandoc-include/issues
 extra-source-files:
 - CHANGELOG.md
 dependencies:
+- bytestring
 - containers >=0.3
 - errors >=2.0.0
 - text >=0.11

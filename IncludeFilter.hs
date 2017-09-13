@@ -85,7 +85,10 @@ import           Text.Pandoc.Walk
 import qualified Text.Pandoc.Builder as B
 
 import           Data.Text (Text)
+import           Data.Text.Encoding
 import qualified Data.Text as T
+import           Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 
 stripPandoc :: Int -> Either PandocError Pandoc -> [Block]
 stripPandoc _ (Left _) = [Null]
@@ -117,14 +120,15 @@ modifyHeaderLevelBlockWith _ _ x = x
 modifyHeaderLevelWith :: Int -> Pandoc -> Pandoc
 modifyHeaderLevelWith n = walk (modifyHeaderLevelBlockWith n mempty)
 
-fileContentAsString :: String -> IO String
-fileContentAsString file = withFile file ReadMode $ \handle -> do
+fileContentAsText :: FilePath -> IO Text
+fileContentAsText file = withFile file ReadMode $ \handle -> do
   hSetEncoding handle utf8
-  hGetContents handle
+  contents <- BS.hGetContents handle
+  pure . decodeUtf8 $ contents
 
-fileContentAsBlocks :: Int -> String -> IO [Block]
+fileContentAsBlocks :: Int -> FilePath -> IO [Block]
 fileContentAsBlocks changeInHeaderLevel file = do
-  let contents = T.pack <$> fileContentAsString file
+  let contents = fileContentAsText file
   let p = runIO . readMarkdown def =<< contents
   stripPandoc changeInHeaderLevel <$> p
 
@@ -141,12 +145,12 @@ simpleInclude changeInHeaderLevel list classes = do
 includeCodeBlock :: Block -> IO [Block]
 includeCodeBlock (CodeBlock (_, classes, _) list) = do
   let filePath = head $ lines list
-  let content = fileContentAsString filePath
+  let content = fileContentAsText filePath
   let newclasses = filter (\x -> "include" `isPrefixOf` x || "code" `isPrefixOf` x) classes
-  let blocks = fmap (B.codeBlockWith ("", newclasses, [])) content
+  let blocks = fmap (B.codeBlockWith ("", newclasses, []) . T.unpack) content
   fmap B.toList blocks
 
-cropContent :: [String] -> (String, String) -> [String]
+cropContent :: [Text] -> (String, String) -> [Text]
 cropContent lines (skip, count) =
   if not $ null skip then
     if not $ null count then
@@ -159,8 +163,8 @@ cropContent lines (skip, count) =
 includeCropped :: Block -> IO [Block]
 includeCropped (CodeBlock (_, classes, _) list) = do
   let [filePath, skip, count] = lines list
-  let content = fileContentAsString filePath
-  let croppedContent = T.pack . unlines <$> ((cropContent . lines <$> content) <*> pure (skip, count))
+  let content = fileContentAsText filePath
+  let croppedContent = T.unlines <$> ((cropContent . T.lines <$> content) <*> pure (skip, count))
   fmap (stripPandoc 0) . runIO . readMarkdown def =<< croppedContent
 
 doInclude :: Block -> IO [Block]
