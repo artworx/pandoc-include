@@ -1,6 +1,7 @@
 flags: {}
-resolver:
-  name: default-snapshot
-  location: snapshot.yaml
+resolver: https://gist.github.com/dbaynard/9693107a883a6282f52f22785d0072e2/raw/eeb1f7a905e06bb22c641f30923a91f96bc4ead6
+ghc-options:
+  "$everything": -pgmL markdown-unlit
+
 packages:
 - '.'
