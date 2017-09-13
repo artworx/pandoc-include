@@ -84,6 +84,9 @@ import           Text.Pandoc.JSON
 import           Text.Pandoc.Walk
 import qualified Text.Pandoc.Builder as B
 
+import           Data.Text (Text)
+import qualified Data.Text as T
+
 stripPandoc :: Int -> Either PandocError Pandoc -> [Block]
 stripPandoc _ (Left _) = [Null]
 stripPandoc changeInHeaderLevel (Right (Pandoc meta blocks)) = maybe id (:) title modBlocks
@@ -121,8 +124,8 @@ fileContentAsString file = withFile file ReadMode $ \handle -> do
 
 fileContentAsBlocks :: Int -> String -> IO [Block]
 fileContentAsBlocks changeInHeaderLevel file = do
-  let contents = fileContentAsString file
-  let p = fmap (readMarkdown def) contents
+  let contents = T.pack <$> fileContentAsString file
+  let p = runIO . readMarkdown def =<< contents
   stripPandoc changeInHeaderLevel <$> p
 
 getProcessableFileList :: String -> [String]
@@ -157,8 +160,8 @@ includeCropped :: Block -> IO [Block]
 includeCropped (CodeBlock (_, classes, _) list) = do
   let [filePath, skip, count] = lines list
   let content = fileContentAsString filePath
-  let croppedContent = unlines <$> ((cropContent . lines <$> content) <*> pure (skip, count))
-  fmap (stripPandoc 0 . readMarkdown def) croppedContent
+  let croppedContent = T.pack . unlines <$> ((cropContent . lines <$> content) <*> pure (skip, count))
+  fmap (stripPandoc 0) . runIO . readMarkdown def =<< croppedContent
 
 doInclude :: Block -> IO [Block]
 doInclude cb@(CodeBlock (_, classes, options) list)
