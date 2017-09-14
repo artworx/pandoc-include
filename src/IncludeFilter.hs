@@ -42,30 +42,24 @@ import           Control.Monad
 import           Data.List
 import qualified Data.Char as C
 import qualified Data.Map as Map
-import           Control.Error (readMay, fromMaybe, note)
-import           System.Directory
+import           Control.Error (readMay, fromMaybe)
 import           System.FilePath
 import           System.IO
 import           System.IO.Temp
 import qualified Control.Exception as E
-import qualified Data.Set as Set
 
 import           Lens.Micro
 import           Lens.Micro.Mtl
 
 import           Text.Pandoc
-import           Text.Pandoc.Readers (getReader)
 import           Text.Pandoc.App (convertWithOpts', defaultOpts, options,
                                   parseOptions, Opt(..), APIOpt(..), defaultAPIOpts,
                                   toAST)
 import           Text.Pandoc.Error (PandocError, handleError)
 import           Text.Pandoc.Shared (uniqueIdent, stringify)
-import           Text.Pandoc.Class
-import           Text.Pandoc.Error
 import           Text.Pandoc.JSON
 import           Text.Pandoc.Walk
 import qualified Text.Pandoc.Builder as B
-import qualified Text.Pandoc.UTF8 as UTF8
 
 import           Data.Text (Text)
 import           Data.Text.Encoding
@@ -84,81 +78,10 @@ runFilter = toJSONFilter $ doInclude defaultOpts
 
 apiOpts :: Opt -> IO APIOpt
 apiOpts opts = do
-    readerExts <- error "Can't parse options" `either` (pure . snd) $ getReader @PandocPure =<< readerName
-    writerName <- pure . nonPdfWriterName $ optWriter opts
-    abbrevs <- fmap (error "Can't read abbreviations" `either` id) . runIO $ do
-        abs <- case optAbbreviations opts of
-                Nothing -> UTF8.toString <$> readDataFile "abbreviations"
-                Just f  -> UTF8.toString <$> readFileStrict f
-        pure . Set.fromList . filter (not . null) . lines $ abs
     pure $ defaultAPIOpts &~ do
         _apiFilterFunction .= (walk' . doInclude $ opts)
     where
         walk' f = bottomUpM $ fmap concat . traverse f
-
-        outputFile = fromMaybe "-" (optOutputFile opts)
-
-        format = takeWhile (`notElem` ['+','-']) . takeFileName
-
-        nonPdfWriterName = defaultWriterName outputFile `maybe` map C.toLower
-
-        readerOpts writerName abbrevs readerExts = def
-          { readerStandalone = optStandalone opts ||
-                  (not . isTextFormat . format $ writerName)
-          , readerColumns = optColumns opts
-          , readerTabStop = optTabStop opts
-          , readerIndentedCodeClasses = optIndentedCodeClasses opts
-          , readerDefaultImageExtension =
-             optDefaultImageExtension opts
-          , readerTrackChanges = optTrackChanges opts
-          , readerAbbreviations = abbrevs
-          , readerExtensions = readerExts
-          }
-
-        readerName = note "No reader" . fmap (map C.toLower) $ optReader opts
-
-        isTextFormat :: String -> Bool
-        isTextFormat s = s `notElem` ["odt","docx","epub","epub3"]
-
-        defaultWriterName :: FilePath -> String
-        defaultWriterName "-" = "html" -- no output file
-        defaultWriterName x =
-          case takeExtension (map C.toLower x) of
-            ""          -> "markdown" -- empty extension
-            ".tex"      -> "latex"
-            ".latex"    -> "latex"
-            ".ltx"      -> "latex"
-            ".context"  -> "context"
-            ".ctx"      -> "context"
-            ".rtf"      -> "rtf"
-            ".rst"      -> "rst"
-            ".s5"       -> "s5"
-            ".native"   -> "native"
-            ".json"     -> "json"
-            ".txt"      -> "markdown"
-            ".text"     -> "markdown"
-            ".md"       -> "markdown"
-            ".markdown" -> "markdown"
-            ".textile"  -> "textile"
-            ".lhs"      -> "markdown+lhs"
-            ".texi"     -> "texinfo"
-            ".texinfo"  -> "texinfo"
-            ".db"       -> "docbook"
-            ".odt"      -> "odt"
-            ".docx"     -> "docx"
-            ".epub"     -> "epub"
-            ".org"      -> "org"
-            ".asciidoc" -> "asciidoc"
-            ".adoc"     -> "asciidoc"
-            ".fb2"      -> "fb2"
-            ".opml"     -> "opml"
-            ".icml"     -> "icml"
-            ".tei.xml"  -> "tei"
-            ".tei"      -> "tei"
-            ".ms"       -> "ms"
-            ".roff"     -> "ms"
-            ['.',y]     | y `elem` ['1'..'9'] -> "man"
-            _           -> "html"
 
 _apiFilterFunction :: APIOpt `Lens'` (Pandoc -> IO Pandoc)
 _apiFilterFunction f APIOpt{..} = (\apiFilterFunction -> APIOpt{apiFilterFunction, ..}) <$> f apiFilterFunction
@@ -168,6 +91,7 @@ _optInputFiles :: Opt `Lens'` [FilePath]
 _optInputFiles f Opt{..} = (\optInputFiles -> Opt{optInputFiles, ..}) <$> f optInputFiles
 {-# INLINE _optInputFiles #-}
 
+stripPandoc :: Int -> Either err Pandoc -> [Block]
 stripPandoc _ (Left _) = [Null]
 stripPandoc changeInHeaderLevel (Right (Pandoc meta blocks)) = maybe id (:) title modBlocks
     where
