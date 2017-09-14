@@ -29,16 +29,25 @@ dependencies:
 - directory
 library:
   source-dirs: src
+  exposed-modules:
+  - IncludeFilter
   default-extensions:
   - CPP
   dependencies:
   - base >=4.6 && <5
 executables:
   pandoc-include:
-    main: IncludeFilter.hs
-    source-dirs: ./.
+    main: pandoc-include.hs
+    source-dirs: app
     dependencies:
     - base >=4.6
+    - pandoc-include
+  pandoc-recurse:
+    main: pandoc-recurse.hs
+    source-dirs: app
+    dependencies:
+    - base >=4.6
+    - pandoc-include
 data-files:
 - README.md
 stability: alpha
