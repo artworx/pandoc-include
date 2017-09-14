@@ -67,22 +67,38 @@ example, if the header is incremented by 1, the title is inserted as a level 1 h
 
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ViewPatterns #-}
-
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeApplications #-}
 
 import           Control.Monad
 import           Data.List
 import qualified Data.Char as C
 import qualified Data.Map as Map
-import           Control.Error (readMay, fromMaybe)
+import           Control.Error (readMay, fromMaybe, note)
 import           System.Directory
+import           System.FilePath
 import           System.IO
+import qualified Control.Exception as E
+import qualified Data.Set as Set
+
+import           Lens.Micro
+import           Lens.Micro.Mtl
 
 import           Text.Pandoc
+import           Text.Pandoc.Readers (getReader)
+import           Text.Pandoc.App (convertWithOpts', defaultOpts, options,
+                                  parseOptions, Opt(..), APIOpt(..), defaultAPIOpts)
+import           Text.Pandoc.Error (PandocError, handleError)
 import           Text.Pandoc.Shared (uniqueIdent, stringify)
+import           Text.Pandoc.Class
 import           Text.Pandoc.Error
 import           Text.Pandoc.JSON
 import           Text.Pandoc.Walk
 import qualified Text.Pandoc.Builder as B
+import qualified Text.Pandoc.UTF8 as UTF8
 
 import           Data.Text (Text)
 import           Data.Text.Encoding
@@ -90,7 +106,96 @@ import qualified Data.Text as T
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 
-stripPandoc :: Int -> Either PandocError Pandoc -> [Block]
+main :: IO ()
+main = (\(e :: PandocError) -> handleError (Left e)) `E.handle`  do
+    opts <- parseOptions options defaultOpts
+    api <- apiOpts opts
+    convertWithOpts' api opts
+
+apiOpts :: Opt -> IO APIOpt
+apiOpts opts = do
+    readerExts <- error "Can't parse options" `either` (pure . snd) $ getReader @PandocPure =<< readerName
+    writerName <- pure . nonPdfWriterName $ optWriter opts
+    abbrevs <- fmap (error "Can't read abbreviations" `either` id) . runIO $ do
+        abs <- case optAbbreviations opts of
+                Nothing -> UTF8.toString <$> readDataFile "abbreviations"
+                Just f  -> UTF8.toString <$> readFileStrict f
+        pure . Set.fromList . filter (not . null) . lines $ abs
+    pure $ defaultAPIOpts &~ do
+        _apiFilterFunction .= (walk' . doInclude $
+            readerOpts writerName abbrevs readerExts
+            )
+    where
+        walk' f = bottomUpM $ fmap concat . traverse f
+
+        outputFile = fromMaybe "-" (optOutputFile opts)
+
+        format = takeWhile (`notElem` ['+','-']) . takeFileName
+
+        nonPdfWriterName = defaultWriterName outputFile `maybe` map C.toLower
+
+        readerOpts writerName abbrevs readerExts = def
+          { readerStandalone = optStandalone opts ||
+                  (not . isTextFormat . format $ writerName)
+          , readerColumns = optColumns opts
+          , readerTabStop = optTabStop opts
+          , readerIndentedCodeClasses = optIndentedCodeClasses opts
+          , readerDefaultImageExtension =
+             optDefaultImageExtension opts
+          , readerTrackChanges = optTrackChanges opts
+          , readerAbbreviations = abbrevs
+          , readerExtensions = readerExts
+          }
+
+        readerName = note "No reader" . fmap (map C.toLower) $ optReader opts
+
+        isTextFormat :: String -> Bool
+        isTextFormat s = s `notElem` ["odt","docx","epub","epub3"]
+
+        defaultWriterName :: FilePath -> String
+        defaultWriterName "-" = "html" -- no output file
+        defaultWriterName x =
+          case takeExtension (map C.toLower x) of
+            ""          -> "markdown" -- empty extension
+            ".tex"      -> "latex"
+            ".latex"    -> "latex"
+            ".ltx"      -> "latex"
+            ".context"  -> "context"
+            ".ctx"      -> "context"
+            ".rtf"      -> "rtf"
+            ".rst"      -> "rst"
+            ".s5"       -> "s5"
+            ".native"   -> "native"
+            ".json"     -> "json"
+            ".txt"      -> "markdown"
+            ".text"     -> "markdown"
+            ".md"       -> "markdown"
+            ".markdown" -> "markdown"
+            ".textile"  -> "textile"
+            ".lhs"      -> "markdown+lhs"
+            ".texi"     -> "texinfo"
+            ".texinfo"  -> "texinfo"
+            ".db"       -> "docbook"
+            ".odt"      -> "odt"
+            ".docx"     -> "docx"
+            ".epub"     -> "epub"
+            ".org"      -> "org"
+            ".asciidoc" -> "asciidoc"
+            ".adoc"     -> "asciidoc"
+            ".fb2"      -> "fb2"
+            ".opml"     -> "opml"
+            ".icml"     -> "icml"
+            ".tei.xml"  -> "tei"
+            ".tei"      -> "tei"
+            ".ms"       -> "ms"
+            ".roff"     -> "ms"
+            ['.',y]     | y `elem` ['1'..'9'] -> "man"
+            _           -> "html"
+
+_apiFilterFunction :: APIOpt `Lens'` (Pandoc -> IO Pandoc)
+_apiFilterFunction f APIOpt{..} = (\apiFilterFunction -> APIOpt{apiFilterFunction, ..}) <$> f apiFilterFunction
+{-# INLINE _apiFilterFunction #-}
+
 stripPandoc _ (Left _) = [Null]
 stripPandoc changeInHeaderLevel (Right (Pandoc meta blocks)) = maybe id (:) title modBlocks
     where
@@ -179,6 +284,3 @@ doInclude ropts cb@(CodeBlock (_, classes, options) list)
   | "code" `elem` classes = includeCodeBlock cb
   | "cropped" `elem` classes = includeCropped ropts cb
 doInclude _ x = return [x]
-
-main :: IO ()
-main = toJSONFilter $ doInclude def

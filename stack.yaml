@@ -2,6 +2,9 @@ flags: {}
 resolver: https://gist.github.com/dbaynard/9693107a883a6282f52f22785d0072e2/raw/eeb1f7a905e06bb22c641f30923a91f96bc4ead6
 ghc-options:
   "$everything": -pgmL markdown-unlit
+extra-deps:
+- git: https://github.com/dbaynard/pandoc
+  commit: b4a80c651e6c9abcb5709be80d120d6d88d834ec
 
 packages:
 - '.'
