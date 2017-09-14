@@ -16,17 +16,6 @@ git: git://github.com/steindani/pandoc-include.git
 bug-reports: https://github.com/steindani/pandoc-include/issues
 extra-source-files:
 - CHANGELOG.md
-dependencies:
-- bytestring
-- containers >=0.3
-- errors >=2.0.0
-- filepath
-- microlens
-- microlens-mtl
-- text >=0.11
-- pandoc >=1.13.0.0
-- pandoc-types >=1.12.0.0
-- directory
 library:
   source-dirs: src
   exposed-modules:
@@ -35,6 +24,16 @@ library:
   - CPP
   dependencies:
   - base >=4.6 && <5
+  - bytestring
+  - containers >=0.3
+  - errors >=2.0.0
+  - filepath
+  - microlens
+  - microlens-mtl
+  - text >=0.11
+  - pandoc >=1.13.0.0
+  - pandoc-types >=1.12.0.0
+  - directory
 executables:
   pandoc-include:
     main: pandoc-include.hs

@@ -35,6 +35,7 @@ library
     src
   default-extensions: CPP
   build-depends:
+    base >=4.6 && <5,
     bytestring,
     containers >=0.3,
     errors >=2.0.0,
@@ -44,8 +45,7 @@ library
     text >=0.11,
     pandoc >=1.13.0.0,
     pandoc-types >=1.12.0.0,
-    directory,
-    base >=4.6 && <5
+    directory
   exposed-modules:
     IncludeFilter
   other-modules:
@@ -57,16 +57,6 @@ executable pandoc-include
   hs-source-dirs:
     app
   build-depends:
-    bytestring,
-    containers >=0.3,
-    errors >=2.0.0,
-    filepath,
-    microlens,
-    microlens-mtl,
-    text >=0.11,
-    pandoc >=1.13.0.0,
-    pandoc-types >=1.12.0.0,
-    directory,
     base >=4.6,
     pandoc-include
   default-language: Haskell2010
@@ -76,16 +66,6 @@ executable pandoc-recurse
   hs-source-dirs:
     app
   build-depends:
-    bytestring,
-    containers >=0.3,
-    errors >=2.0.0,
-    filepath,
-    microlens,
-    microlens-mtl,
-    text >=0.11,
-    pandoc >=1.13.0.0,
-    pandoc-types >=1.12.0.0,
-    directory,
     base >=4.6,
     pandoc-include
   default-language: Haskell2010
