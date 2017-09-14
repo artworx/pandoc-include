@@ -126,10 +126,10 @@ fileContentAsText file = withFile file ReadMode $ \handle -> do
   contents <- BS.hGetContents handle
   pure . decodeUtf8 $ contents
 
-fileContentAsBlocks :: Int -> FilePath -> IO [Block]
-fileContentAsBlocks changeInHeaderLevel file = do
+fileContentAsBlocks :: ReaderOptions -> Int -> FilePath -> IO [Block]
+fileContentAsBlocks ropts changeInHeaderLevel file = do
   let contents = fileContentAsText file
-  let p = runIO . readMarkdown def =<< contents
+  let p = runIO . readMarkdown ropts =<< contents
   stripPandoc changeInHeaderLevel <$> p
 
 getProcessableFileList :: String -> [String]
@@ -137,10 +137,10 @@ getProcessableFileList list = do
   let f = lines list
   filter (\x -> not $ "#" `isPrefixOf` x) f
 
-simpleInclude :: Int -> String -> [String] -> IO [Block]
-simpleInclude changeInHeaderLevel list classes = do
+simpleInclude :: ReaderOptions -> Int -> String -> [String] -> IO [Block]
+simpleInclude ropts changeInHeaderLevel list classes = do
   let toProcess = getProcessableFileList list
-  fmap concat (fileContentAsBlocks changeInHeaderLevel `mapM` toProcess)
+  fmap concat (fileContentAsBlocks ropts changeInHeaderLevel `mapM` toProcess)
 
 includeCodeBlock :: Block -> IO [Block]
 includeCodeBlock (CodeBlock (_, classes, _) list) = do
@@ -160,25 +160,25 @@ cropContent lines (skip, count) =
   else
     lines
 
-includeCropped :: Block -> IO [Block]
-includeCropped (CodeBlock (_, classes, _) list) = do
+includeCropped :: ReaderOptions -> Block -> IO [Block]
+includeCropped ropts (CodeBlock (_, classes, _) list) = do
   let [filePath, skip, count] = lines list
   let content = fileContentAsText filePath
   let croppedContent = T.unlines <$> ((cropContent . T.lines <$> content) <*> pure (skip, count))
-  fmap (stripPandoc 0) . runIO . readMarkdown def =<< croppedContent
+  fmap (stripPandoc 0) . runIO . readMarkdown ropts =<< croppedContent
 
-doInclude :: Block -> IO [Block]
-doInclude cb@(CodeBlock (_, classes, options) list)
+doInclude :: ReaderOptions -> Block -> IO [Block]
+doInclude ropts cb@(CodeBlock (_, classes, options) list)
   | "include" `elem` classes = do
     let changeInHeaderLevel = fromMaybe 0 $ readMay =<< "header-change" `lookup` options
-    simpleInclude changeInHeaderLevel list classes
+    simpleInclude ropts changeInHeaderLevel list classes
   | "include-indented" `elem` classes = do
     let newClasses = ("include" :) . delete "include-indented" $ classes
     let newOptions = ("header-change","1") : options
-    doInclude $ CodeBlock ("", newClasses, newOptions) list
+    doInclude ropts $ CodeBlock ("", newClasses, newOptions) list
   | "code" `elem` classes = includeCodeBlock cb
-  | "cropped" `elem` classes = includeCropped cb
-doInclude x = return [x]
+  | "cropped" `elem` classes = includeCropped ropts cb
+doInclude _ x = return [x]
 
 main :: IO ()
-main = toJSONFilter doInclude
+main = toJSONFilter $ doInclude def
