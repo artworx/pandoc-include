@@ -71,7 +71,8 @@ pandoc :: IO ()
 pandoc = (\(e :: PandocError) -> handleError (Left e)) `E.handle`  do
     opts <- parseOptions options defaultOpts
     api <- apiOpts opts
-    convertWithOpts' api opts
+    convertWithOpts' api $ opts &~ do
+        _optFilters .= []
 
 runFilter :: IO ()
 runFilter = toJSONFilter $ doInclude defaultOpts
@@ -90,6 +91,10 @@ _apiFilterFunction f APIOpt{..} = (\apiFilterFunction -> APIOpt{apiFilterFunctio
 _optInputFiles :: Opt `Lens'` [FilePath]
 _optInputFiles f Opt{..} = (\optInputFiles -> Opt{optInputFiles, ..}) <$> f optInputFiles
 {-# INLINE _optInputFiles #-}
+
+_optFilters :: Opt `Lens'` [FilePath]
+_optFilters f Opt{..} = (\optFilters -> Opt{optFilters, ..}) <$> f optFilters
+{-# INLINE _optFilters #-}
 
 stripPandoc :: Int -> Either err Pandoc -> [Block]
 stripPandoc _ (Left _) = [Null]
