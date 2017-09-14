@@ -45,6 +45,7 @@ library
     text >=0.11,
     pandoc >=1.13.0.0,
     pandoc-types >=1.12.0.0,
+    temporary,
     directory
   exposed-modules:
     IncludeFilter

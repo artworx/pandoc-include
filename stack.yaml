@@ -4,7 +4,7 @@ ghc-options:
   "$everything": -pgmL markdown-unlit
 extra-deps:
 - git: https://github.com/dbaynard/pandoc
-  commit: b4a80c651e6c9abcb5709be80d120d6d88d834ec
+  commit: bd36a294619637e92f5db25fc8cdd5370fa53343
 
 packages:
 - '.'

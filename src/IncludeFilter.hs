@@ -46,6 +46,7 @@ import           Control.Error (readMay, fromMaybe, note)
 import           System.Directory
 import           System.FilePath
 import           System.IO
+import           System.IO.Temp
 import qualified Control.Exception as E
 import qualified Data.Set as Set
 
@@ -55,7 +56,8 @@ import           Lens.Micro.Mtl
 import           Text.Pandoc
 import           Text.Pandoc.Readers (getReader)
 import           Text.Pandoc.App (convertWithOpts', defaultOpts, options,
-                                  parseOptions, Opt(..), APIOpt(..), defaultAPIOpts)
+                                  parseOptions, Opt(..), APIOpt(..), defaultAPIOpts,
+                                  toAST)
 import           Text.Pandoc.Error (PandocError, handleError)
 import           Text.Pandoc.Shared (uniqueIdent, stringify)
 import           Text.Pandoc.Class
@@ -78,7 +80,7 @@ pandoc = (\(e :: PandocError) -> handleError (Left e)) `E.handle`  do
     convertWithOpts' api opts
 
 runFilter :: IO ()
-runFilter = toJSONFilter $ doInclude def
+runFilter = toJSONFilter $ doInclude defaultOpts
 
 apiOpts :: Opt -> IO APIOpt
 apiOpts opts = do
@@ -90,9 +92,7 @@ apiOpts opts = do
                 Just f  -> UTF8.toString <$> readFileStrict f
         pure . Set.fromList . filter (not . null) . lines $ abs
     pure $ defaultAPIOpts &~ do
-        _apiFilterFunction .= (walk' . doInclude $
-            readerOpts writerName abbrevs readerExts
-            )
+        _apiFilterFunction .= (walk' . doInclude $ opts)
     where
         walk' f = bottomUpM $ fmap concat . traverse f
 
@@ -164,6 +164,10 @@ _apiFilterFunction :: APIOpt `Lens'` (Pandoc -> IO Pandoc)
 _apiFilterFunction f APIOpt{..} = (\apiFilterFunction -> APIOpt{apiFilterFunction, ..}) <$> f apiFilterFunction
 {-# INLINE _apiFilterFunction #-}
 
+_optInputFiles :: Opt `Lens'` [FilePath]
+_optInputFiles f Opt{..} = (\optInputFiles -> Opt{optInputFiles, ..}) <$> f optInputFiles
+{-# INLINE _optInputFiles #-}
+
 stripPandoc _ (Left _) = [Null]
 stripPandoc changeInHeaderLevel (Right (Pandoc meta blocks)) = maybe id (:) title modBlocks
     where
@@ -199,21 +203,22 @@ fileContentAsText file = withFile file ReadMode $ \handle -> do
   contents <- BS.hGetContents handle
   pure . decodeUtf8 $ contents
 
-fileContentAsBlocks :: ReaderOptions -> Int -> FilePath -> IO [Block]
-fileContentAsBlocks ropts changeInHeaderLevel file = do
-  let contents = fileContentAsText file
-  let p = runIO . readMarkdown ropts =<< contents
-  stripPandoc changeInHeaderLevel <$> p
+fileContentAsBlocks :: Int -> Opt -> IO [Block]
+fileContentAsBlocks changeInHeaderLevel opts = do
+  let p = toAST defaultAPIOpts opts
+  stripPandoc changeInHeaderLevel . pure <$> p
 
 getProcessableFileList :: String -> [String]
 getProcessableFileList list = do
   let f = lines list
   filter (\x -> not $ "#" `isPrefixOf` x) f
 
-simpleInclude :: ReaderOptions -> Int -> String -> [String] -> IO [Block]
-simpleInclude ropts changeInHeaderLevel list classes = do
-  let toProcess = getProcessableFileList list
-  fmap concat (fileContentAsBlocks ropts changeInHeaderLevel `mapM` toProcess)
+simpleInclude :: Opt -> Int -> String -> [String] -> IO [Block]
+simpleInclude opts changeInHeaderLevel list classes = do
+  let o f = opts &~ do
+          _optInputFiles .= [f]
+  let toProcess = o <$> getProcessableFileList list
+  fmap concat (fileContentAsBlocks changeInHeaderLevel `mapM` toProcess)
 
 includeCodeBlock :: Block -> IO [Block]
 includeCodeBlock (CodeBlock (_, classes, _) list) = do
@@ -233,22 +238,26 @@ cropContent lines (skip, count) =
   else
     lines
 
-includeCropped :: ReaderOptions -> Block -> IO [Block]
-includeCropped ropts (CodeBlock (_, classes, _) list) = do
+includeCropped :: Opt -> Block -> IO [Block]
+includeCropped opts (CodeBlock (_, classes, _) list) = do
   let [filePath, skip, count] = lines list
   let content = fileContentAsText filePath
   let croppedContent = T.unlines <$> ((cropContent . T.lines <$> content) <*> pure (skip, count))
-  fmap (stripPandoc 0) . runIO . readMarkdown ropts =<< croppedContent
+  takeFileName filePath `withSystemTempFile` \temp htemp -> do
+    let o = opts &~ do
+            _optInputFiles .= [temp]
+    BS.hPut htemp . encodeUtf8 =<< croppedContent
+    stripPandoc 0 . pure <$> toAST defaultAPIOpts o
 
-doInclude :: ReaderOptions -> Block -> IO [Block]
-doInclude ropts cb@(CodeBlock (_, classes, options) list)
+doInclude :: Opt -> Block -> IO [Block]
+doInclude opts cb@(CodeBlock (_, classes, options) list)
   | "include" `elem` classes = do
     let changeInHeaderLevel = fromMaybe 0 $ readMay =<< "header-change" `lookup` options
-    simpleInclude ropts changeInHeaderLevel list classes
+    simpleInclude opts changeInHeaderLevel list classes
   | "include-indented" `elem` classes = do
     let newClasses = ("include" :) . delete "include-indented" $ classes
     let newOptions = ("header-change","1") : options
-    doInclude ropts $ CodeBlock ("", newClasses, newOptions) list
+    doInclude opts $ CodeBlock ("", newClasses, newOptions) list
   | "code" `elem` classes = includeCodeBlock cb
-  | "cropped" `elem` classes = includeCropped ropts cb
+  | "cropped" `elem` classes = includeCropped opts cb
 doInclude _ x = return [x]
