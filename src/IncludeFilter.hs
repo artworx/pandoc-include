@@ -70,9 +70,9 @@ import qualified Data.ByteString as BS
 pandoc :: IO ()
 pandoc = (\(e :: PandocError) -> handleError (Left e)) `E.handle`  do
     opts <- parseOptions options defaultOpts
-    api <- apiOpts opts
-    convertWithOpts' api $ opts &~ do
+    api <- apiOpts $ opts &~ do
         _optFilters .= []
+    convertWithOpts' api $ opts
 
 runFilter :: IO ()
 runFilter = toJSONFilter $ doInclude defaultOpts
