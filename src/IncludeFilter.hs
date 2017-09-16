@@ -32,6 +32,8 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 
 module IncludeFilter
   ( pandoc
@@ -39,6 +41,8 @@ module IncludeFilter
   ) where
 
 import           Control.Monad
+import           Data.Bifunctor
+import           Data.Monoid
 import           Data.List
 import qualified Data.Char as C
 import qualified Data.Map as Map
@@ -75,14 +79,12 @@ pandoc = (\(e :: PandocError) -> handleError (Left e)) `E.handle`  do
     convertWithOpts' api $ opts
 
 runFilter :: IO ()
-runFilter = toJSONFilter $ doInclude defaultOpts
+runFilter = toJSONFilter $ transformDoc defaultOpts
 
 apiOpts :: Opt -> IO APIOpt
 apiOpts opts = do
     pure $ defaultAPIOpts &~ do
-        _apiFilterFunction .= (walk' . doInclude $ opts)
-    where
-        walk' f = bottomUpM $ fmap concat . traverse f
+        _apiFilterFunction .= transformDoc opts
 
 _apiFilterFunction :: APIOpt `Lens'` (Pandoc -> IO Pandoc)
 _apiFilterFunction f APIOpt{..} = (\apiFilterFunction -> APIOpt{apiFilterFunction, ..}) <$> f apiFilterFunction
@@ -96,9 +98,14 @@ _optFilters :: Opt `Lens'` [FilePath]
 _optFilters f Opt{..} = (\optFilters -> Opt{optFilters, ..}) <$> f optFilters
 {-# INLINE _optFilters #-}
 
-stripPandoc :: Int -> Either err Pandoc -> [Block]
-stripPandoc _ (Left _) = [Null]
-stripPandoc changeInHeaderLevel (Right (Pandoc meta blocks)) = maybe id (:) title modBlocks
+type BlocksWithMeta = ([Block], Meta)
+
+stripPandoc :: Int -> Either err Pandoc -> BlocksWithMeta
+stripPandoc _ (Left _) = ([Null], mempty)
+stripPandoc changeInHeaderLevel (Right (Pandoc meta blocks)) =
+        ( maybe id (:) title modBlocks
+        , references . bibliography $ mempty
+        )
     where
          getTitle (Meta (Map.lookup "title" -> Just (MetaInlines inls))) = Just inls
          getTitle _ = Nothing
@@ -114,6 +121,13 @@ stripPandoc changeInHeaderLevel (Right (Pandoc meta blocks)) = maybe id (:) titl
          dashFromSpace x = x
          lowerCase (Str x) = Str (fmap C.toLower x)
          lowerCase x = x
+         references :: Meta -> Meta
+         references (lookupMeta "references" -> Just ml@(MetaList reflist)) = B.setMeta "references" ml mempty
+         references x = mempty
+         bibliography :: Meta -> Meta
+         bibliography (lookupMeta "bibliography" -> Just ref@(MetaInlines _)) = B.setMeta "bibliography" (B.toMetaValue [ref]) mempty
+         bibliography (lookupMeta "bibliography" -> Just refs@(MetaList _)) = B.setMeta "bibliography" refs mempty
+         bibliography x = x
 
 amendIdentifier :: String -> Attr -> Attr
 amendIdentifier title (ident, cls, kvs) = (concat [title, "-", ident], cls, kvs)
@@ -132,7 +146,7 @@ fileContentAsText file = withFile file ReadMode $ \handle -> do
   contents <- BS.hGetContents handle
   pure . decodeUtf8 $ contents
 
-fileContentAsBlocks :: Int -> Opt -> IO [Block]
+fileContentAsBlocks :: Int -> Opt -> IO BlocksWithMeta
 fileContentAsBlocks changeInHeaderLevel opts = do
   let p = toAST defaultAPIOpts opts
   stripPandoc changeInHeaderLevel . pure <$> p
@@ -142,20 +156,20 @@ getProcessableFileList list = do
   let f = lines list
   filter (\x -> not $ "#" `isPrefixOf` x) f
 
-simpleInclude :: Opt -> Int -> String -> [String] -> IO [Block]
+simpleInclude :: Opt -> Int -> String -> [String] -> IO BlocksWithMeta
 simpleInclude opts changeInHeaderLevel list classes = do
   let o f = opts &~ do
           _optInputFiles .= [f]
   let toProcess = o <$> getProcessableFileList list
-  fmap concat (fileContentAsBlocks changeInHeaderLevel `mapM` toProcess)
+  (concat `bimap` mconcat) . unzip <$> fileContentAsBlocks changeInHeaderLevel `mapM` toProcess
 
-includeCodeBlock :: Block -> IO [Block]
+includeCodeBlock :: Block -> IO BlocksWithMeta
 includeCodeBlock (CodeBlock (_, classes, _) list) = do
   let filePath = head $ lines list
   let content = fileContentAsText filePath
   let newclasses = filter (\x -> "include" `isPrefixOf` x || "code" `isPrefixOf` x) classes
   let blocks = fmap (B.codeBlockWith ("", newclasses, []) . T.unpack) content
-  fmap B.toList blocks
+  (,mempty) . B.toList <$> blocks
 
 cropContent :: [Text] -> (String, String) -> [Text]
 cropContent lines (skip, count) =
@@ -167,7 +181,7 @@ cropContent lines (skip, count) =
   else
     lines
 
-includeCropped :: Opt -> Block -> IO [Block]
+includeCropped :: Opt -> Block -> IO BlocksWithMeta
 includeCropped opts (CodeBlock (_, classes, _) list) = do
   let [filePath, skip, count] = lines list
   let content = fileContentAsText filePath
@@ -178,7 +192,7 @@ includeCropped opts (CodeBlock (_, classes, _) list) = do
     BS.hPut htemp . encodeUtf8 =<< croppedContent
     stripPandoc 0 . pure <$> toAST defaultAPIOpts o
 
-doInclude :: Opt -> Block -> IO [Block]
+doInclude :: Opt -> Block -> IO BlocksWithMeta
 doInclude opts cb@(CodeBlock (_, classes, options) list)
   | "include" `elem` classes = do
     let changeInHeaderLevel = fromMaybe 0 $ readMay =<< "header-change" `lookup` options
@@ -189,4 +203,9 @@ doInclude opts cb@(CodeBlock (_, classes, options) list)
     doInclude opts $ CodeBlock ("", newClasses, newOptions) list
   | "code" `elem` classes = includeCodeBlock cb
   | "cropped" `elem` classes = includeCropped opts cb
-doInclude _ x = return [x]
+doInclude _ x = return ([x], mempty)
+
+transformDoc :: Opt -> Pandoc -> IO Pandoc
+transformDoc opts (Pandoc meta bls) = do
+        (blocks, m) <- unzip <$> doInclude opts `mapM` bls
+        pure $ Pandoc (meta <> mconcat m) (concat blocks)
