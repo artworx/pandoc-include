@@ -69,6 +69,7 @@ example, if the header is incremented by 1, the title is inserted as a level 1 h
 
 import           Control.Monad
 import           Data.List
+import           Data.Text.IO (readFile)
 import qualified Data.Char as C
 import qualified Data.Map as Map
 import           Control.Error (readMay, fromMaybe)
@@ -103,13 +104,10 @@ modifyHeaderLevelBlockWith _ x = x
 modifyHeaderLevelWith :: Int -> Pandoc -> Pandoc
 modifyHeaderLevelWith n = walk (modifyHeaderLevelBlockWith n)
 
-ioReadMarkdown :: String -> IO(Either PandocError Pandoc)
-ioReadMarkdown content = return $! readMarkdown def content
-
 getContent :: Int -> String -> IO [Block]
 getContent changeInHeaderLevel file = do
-  c <- readFile file
-  p <- ioReadMarkdown c
+  c <- Data.Text.IO.readFile file
+  p <- runIO $ readMarkdown def c
   return $! stripPandoc changeInHeaderLevel p
 
 getProcessableFileList :: String -> IO [String]
